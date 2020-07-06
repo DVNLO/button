@@ -17,15 +17,15 @@ enum struct button_states : int
 class button
 {
     button_states state;
-    std::function<button_states(button_states)> transition_function;
-    std::function<void(button_states)> action_function;
+    std::function<button_states(button_states const)> const transition_function;
+    std::function<void(button_states)> const action_function;
+    void run();
     std::thread t;
     std::mutex m;
     bool is_started{ false };
-    void update();
 public:
     button(button_states const start_state,
-           std::function<button_states(button_states)> transition_function, 
+           std::function<button_states(button_states const)> transition_function, 
            std::function<void(button_states)> action_function);
     void start();
     void press();
@@ -35,11 +35,12 @@ public:
 };
 
 button::button(button_states const start_state,
-               std::function<button_states(button_states)> transition_function, 
+               std::function<button_states(button_states const)> transition_function, 
                std::function<void(button_states)> action_function)
 : state{ start_state }, transition_function{ transition_function }, 
-    action_function{ action_function }, t{ std::thread(&button::update) }
+    action_function{ action_function }, t{ &button::run, this }
 {
+    t.detach();
 }
 
 void
@@ -53,7 +54,8 @@ void
 button::press()
 {
     std::lock_guard<std::mutex> lock{ m };
-    if(state == button_states::RELEASED)
+    if(state == button_states::RELEASE
+       || state == button_states::RELEASED)
     {
         state = button_states::PRESS;
     }
@@ -63,17 +65,19 @@ void
 button::release()
 {
     std::lock_guard<std::mutex> lock{ m };
-    if(state == button_states::PRESSED)
+    if(state == button_states::PRESS 
+       || state == button_states::PRESSED)
     {
         state = button_states::RELEASE;
     }
 }
 
 void
-button::update()
+button::run()
 {
     while(true)
     {
+        std::lock_guard<std::mutex> lock{ m };
         if(is_started)
         {
             state = transition_function(state);
@@ -87,8 +91,6 @@ button::stop()
 {
     std::lock_guard<std::mutex> lock{ m };
     is_started = false;
-}
-
-
+}   
 
 #endif // BUTTON_H
